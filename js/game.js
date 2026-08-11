@@ -23,6 +23,9 @@ const Storage = {
       realm_guides_met: [],
       workshop_visits: 0,
       studied_words: [],
+      setup_complete: false,
+      instruction_language: "standard",
+      presentation_style: "story",
     };
   },
 
@@ -68,6 +71,9 @@ const Storage = {
       realm_guides_met: uniqueStrings(data.realm_guides_met),
       workshop_visits: normalizeInt(data.workshop_visits, base.workshop_visits),
       studied_words: uniqueStrings(data.studied_words).map((word) => word.toLowerCase()),
+      setup_complete: data.setup_complete === true,
+      instruction_language: data.instruction_language === "simple" ? "simple" : "standard",
+      presentation_style: data.presentation_style === "direct" ? "direct" : "story",
     };
   },
 
@@ -100,6 +106,7 @@ const GameState = {
 
   init() {
     this.progress = Storage.load();
+    applyPreferencesToDocument();
   },
 
   get gems()          { return this.progress.gems; },
@@ -107,6 +114,8 @@ const GameState = {
   get achievements()  { return this.progress.achievements; },
   get focusTokens()   { return this.progress.focus_tokens; },
   get mistakes()      { return this.progress.mistakes; },
+  get simpleEnglish() { return this.progress.instruction_language === "simple"; },
+  get directPractice(){ return this.progress.presentation_style === "direct"; },
 
   rank() {
     let name = RANKS[0][1];
@@ -304,6 +313,10 @@ function statusBar() {
   bar.appendChild(el("span", { className: "gems" }, `${gs.gems} gems`));
   bar.appendChild(el("span", {}, `${gs.focusTokens} crystals`));
   bar.appendChild(el("span", {}, `${gs.completed.length}/15 levels`));
+  bar.appendChild(el("span", {
+    className: "mode-badge",
+    "aria-label": `Instructions: ${gs.simpleEnglish ? "Simple English" : "Standard English"}. Presentation: ${gs.directPractice ? "Direct Practice" : "Story Adventure"}`,
+  }, `${gs.simpleEnglish ? "Simple" : "Standard"} · ${gs.directPractice ? "Direct" : "Story"}`));
   return bar;
 }
 
@@ -325,6 +338,68 @@ function waitPrompt(label = "Activate the Continue button to continue.") {
   });
 }
 
+function instructionText(standard, simple) {
+  return GameState.simpleEnglish ? simple : standard;
+}
+
+function applyPreferencesToDocument() {
+  if (!GameState.progress || typeof document === "undefined") return;
+  document.body.dataset.instructions = GameState.simpleEnglish ? "simple" : "standard";
+  document.body.dataset.presentation = GameState.directPractice ? "direct" : "story";
+}
+
+async function screenPreferenceSetup({ allowCancel = false } = {}) {
+  const language = await buildMenu(
+    "Choose Your Instruction Language",
+    [
+      ["Simple English — short sentences and common words", "simple"],
+      ["Standard English — normal explanations and richer vocabulary", "standard"],
+    ],
+    allowCancel ? "main menu" : null,
+    "This changes the instructions, not the difficulty of the spelling exercises."
+  );
+  if (!language) return false;
+
+  GameState.progress.instruction_language = language;
+  const presentation = await buildMenu(
+    instructionText("Choose Your Presentation", "Choose How You Want to Play"),
+    [
+      [instructionText("Story Adventure — realms, characters, and story scenes", "Story Adventure — play with a story"), "story"],
+      [instructionText("Direct Practice — shorter screens focused on exercises", "Direct Practice — go to the exercises faster"), "direct"],
+    ],
+    allowCancel ? "instruction language" : null,
+    instructionText(
+      "Both presentations use the same lessons, mastery rules, rewards, and saved progress.",
+      "Both choices use the same lessons, scores, rewards, and saved progress."
+    )
+  );
+  if (!presentation) return false;
+
+  GameState.progress.presentation_style = presentation;
+  GameState.progress.setup_complete = true;
+  applyPreferencesToDocument();
+  GameState.save();
+  announce(instructionText(
+    `Preferences saved. ${language === "simple" ? "Simple" : "Standard"} English with ${presentation === "story" ? "Story Adventure" : "Direct Practice"}.`,
+    "Your choices are saved. You can change them later from the main menu."
+  ));
+  return true;
+}
+
+async function screenPreferences() {
+  const changed = await screenPreferenceSetup({ allowCancel: true });
+  if (!changed) return;
+  const root = clearRoot();
+  const screen = el("div", { className: "screen" });
+  screen.appendChild(el("div", { className: "game-heading" }, el("h1", {}, instructionText("Preferences Updated", "Choices Saved"))));
+  screen.appendChild(el("div", { className: "prose" }, el("p", {}, instructionText(
+    "Your instruction language and presentation have been updated. Your levels, gems, achievements, and studied words have not changed.",
+    "Your instructions and game style changed. Your levels, gems, rewards, and learned words are still saved."
+  ))));
+  root.appendChild(screen);
+  await waitPrompt();
+}
+
 /* ---------- Screen: Intro ---------------------------------------------- */
 function screenIntro() {
   const root = clearRoot();
@@ -336,7 +411,41 @@ function screenIntro() {
   screen.appendChild(hd);
 
   const prose = el("div", { className: "prose" });
-  prose.innerHTML = `
+  if (GameState.directPractice) {
+    prose.innerHTML = GameState.simpleEnglish ? `
+      <p>SpellQuest helps you practise English spelling and writing.</p>
+      <p>There are 15 levels. The first levels use short words. Later levels use difficult words, grammar, sentences, and writing.</p>
+      <p>You first study a new word. Then the word is hidden and you spell it yourself.</p>
+      <p>You earn gems for correct answers. You can make some mistakes. You must reach the score shown for the level before the next level opens.</p>
+      <p><strong>HOW TO PLAY:</strong><br>
+      In a menu, use UP and DOWN. Press ENTER to choose.<br>
+      On a button, press ENTER or SPACE.<br>
+      In an answer box, type your answer. Press ENTER to send a short answer.<br>
+      For long writing, press TAB to find the submit button.</p>
+    ` : `
+      <p>SpellQuest provides structured English spelling and writing practice across 15 progressively challenging levels.</p>
+      <p>The curriculum moves from everyday spelling to difficult word patterns, grammar correction, sentence construction, paragraphs, stories, and reflective writing.</p>
+      <p>New spelling words use a study-then-recall cycle. Correct answers earn gems, while level progression requires the announced mastery score.</p>
+      <p><strong>HOW TO PLAY:</strong><br>
+      In menus, use UP and DOWN arrows and press ENTER to choose.<br>
+      When a button has focus, press ENTER or SPACE to activate it.<br>
+      In a short answer field, type and press ENTER. For long writing, use the visible submit button.<br>
+      Use ESC only when the current screen offers a way back.</p>
+    `;
+  } else if (GameState.simpleEnglish) {
+    prose.innerHTML = `
+      <p>Welcome to a world made from words. You are a traveller. You will learn spelling and writing as you explore.</p>
+      <p>There are five places and 15 levels. You start with short words. Later, you practise difficult words, grammar, sentences, and stories.</p>
+      <p>You first study a new word. Then the word is hidden and you spell it yourself.</p>
+      <p>You earn gems and open treasure chests. You can also unlock three bonus games.</p>
+      <p><strong>HOW TO PLAY:</strong><br>
+      In a menu, use UP and DOWN. Press ENTER to choose.<br>
+      On a button, press ENTER or SPACE.<br>
+      In an answer box, type your answer. Press ENTER to send a short answer.<br>
+      For long writing, press TAB to find the submit button.</p>
+      <p>Mistakes help you learn. You can try a level again.</p>
+    `;
+  } else prose.innerHTML = `
     <p>Ahead of you stretches a world built not of stone and soil,
     but of <em>words</em> — living words that glow, whisper, and wait
     for someone brave enough to shape them.</p>
@@ -396,6 +505,7 @@ async function screenMainMenu() {
     ["The Adventurer's Rest  (Bonus Trials)", "trials"],
     ["Review Your Mistakes", "mistakes"],
     ["View Your Stats", "stats"],
+    [instructionText("Learning & Presentation Settings", "Change Instructions or Game Style"), "preferences"],
     ["Save & Load", "save_load"],
     ["About SpellQuest", "about"],
     ["Quit", "quit"],
@@ -432,6 +542,9 @@ async function screenMainMenu() {
     case "stats":
       screenStats();
       await waitPrompt();
+      break;
+    case "preferences":
+      await screenPreferences();
       break;
     case "save_load":
       await screenSaveLoad();
@@ -791,7 +904,24 @@ function screenAbout() {
   screen.appendChild(el("div", { className: "game-heading" }, el("h1", {}, "About SpellQuest")));
 
   const prose = el("div", { className: "prose" });
-  prose.innerHTML = `
+  if (GameState.directPractice) prose.innerHTML = GameState.simpleEnglish ? `
+    <p>SpellQuest helps you practise English spelling and writing.</p>
+    <p>There are 15 levels. You study words, spell from memory, choose words, fix grammar, build sentences, and write longer texts.</p>
+    <p>Correct answers earn gems. You must reach the level score before the next level opens. Some mistakes are allowed.</p>
+    <p>You are using <strong>Direct Practice</strong>. You can change the instructions or game style from the main menu.</p>
+  ` : `
+    <p>SpellQuest is an accessible English spelling and writing practice game with 15 progressive levels.</p>
+    <p>Exercises cover spelling recall, word choice, grammar correction, sentence construction, paragraphs, stories, and reflective writing.</p>
+    <p>You are using <strong>Direct Practice</strong>, which reduces narrative transitions while preserving the complete curriculum, mastery system, rewards, and bonus trials.</p>
+    <p>Change instruction language or presentation at any time from Learning &amp; Presentation Settings.</p>
+  `;
+  else if (GameState.simpleEnglish) prose.innerHTML = `
+    <p>SpellQuest is a story game for English spelling and writing.</p>
+    <p>You travel through five places. You learn words, grammar, sentences, and writing.</p>
+    <p>You earn gems and rewards. Some mistakes are allowed. You can try levels again.</p>
+    <p>You are using <strong>Simple English</strong> and <strong>Story Adventure</strong>. You can change these choices from the main menu.</p>
+  `;
+  else prose.innerHTML = `
     <p>SpellQuest is an English spelling and writing adventure game
     designed especially for screen reader users.</p>
     <p><strong>What is SpellQuest?</strong><br>
@@ -848,8 +978,12 @@ function getMasteryRequirement(lv, totalRounds) {
   return { percent: effectivePercent, requiredCorrect };
 }
 
+function getScoredRounds(data) {
+  return data.rounds.filter((round) => round.type !== "choice_moment");
+}
+
 function getLevelMasteryResult(lv, data) {
-  const requirement = getMasteryRequirement(lv, data.rounds.length);
+  const requirement = getMasteryRequirement(lv, getScoredRounds(data).length);
   const scorePassed = GameState.session.levelCorrect >= requirement.requiredCorrect;
   return { ...requirement, passed: scorePassed };
 }
@@ -865,11 +999,14 @@ function screenWordStudy(round) {
   const screen = el("div", { className: "screen" });
   screen.appendChild(el("div", { className: "game-heading" }, el("h1", {}, "Study This Word")));
   screen.appendChild(el("div", { className: "prose" },
-    el("p", {}, "Look at and listen to the spelling. After Continue, the written word will be hidden and you will spell it yourself."),
+    el("p", {}, instructionText(
+      "Look at and listen to the spelling. After Continue, the written word will be hidden and you will spell it yourself.",
+      "Study this word. After Continue, the word will be hidden. Then you spell it yourself."
+    )),
     el("div", { className: "game-message msg-info" }, el("strong", {}, word)),
     el("p", {}, `Letters: ${letters}`),
     el("p", {}, `Meaning: ${round.hint}`),
-    el("p", {}, `Pattern tip: ${round.explain}`)));
+    el("p", {}, `${instructionText("Pattern tip", "Spelling help")}: ${round.explain}`)));
   root.appendChild(screen);
   if (!GameState.progress.studied_words.includes(word.toLowerCase())) {
     GameState.progress.studied_words.push(word.toLowerCase());
@@ -895,7 +1032,7 @@ async function playLevel(lv) {
   };
 
   // Realm entry
-  if (REALM_ENTRY[realm]) {
+  if (!GameState.directPractice && REALM_ENTRY[realm]) {
     const realmLevels = Object.keys(LEVEL_DATA).map(Number).sort((a,b) => a-b)
       .filter(l => LEVEL_DATA[l].realm === realm);
     const firstInRealm = !realmLevels.some(rl => GameState.completed.includes(rl));
@@ -914,18 +1051,21 @@ async function playLevel(lv) {
 
   // Play each scene
   for (const scene of scenes) {
-    await screenSceneIntro(lv, data, scene);
+    if (!GameState.directPractice) await screenSceneIntro(lv, data, scene);
     for (let i = 0; i < scene.rounds.length; i++) {
       const r = scene.rounds[i];
+      if (r.type === "choice_moment" && GameState.directPractice) continue;
       if (r.type === "spell" && !hasStudiedWord(r)) {
         await screenWordStudy(r);
       }
       const result = await playChallenge(lv, scene, i, r);
-      if (result) handleCorrect(lv, r);
-      else handleWrong(lv, r);
+      if (r.type !== "choice_moment") {
+        if (result) handleCorrect(lv, r);
+        else handleWrong(lv, r);
+      }
       await waitPrompt();
     }
-    await screenSceneCleared(scene);
+    if (!GameState.directPractice) await screenSceneCleared(scene);
   }
 
   // Level complete
@@ -943,7 +1083,7 @@ async function playLevel(lv) {
     const r = LEVEL_DATA[rl].realm;
     if (!realmEndLevels[r] || rl > realmEndLevels[r]) realmEndLevels[r] = rl;
   }
-  if (lv === realmEndLevels[realm] && REALM_FAREWELL[realm]) {
+  if (!GameState.directPractice && lv === realmEndLevels[realm] && REALM_FAREWELL[realm]) {
     const [guideName, farewellText] = REALM_FAREWELL[realm];
     if (!GameState.progress.realm_guides_met.includes(guideName)) {
       GameState.progress.realm_guides_met.push(guideName);
@@ -1018,7 +1158,23 @@ function screenLevelIntro(lv, data, scenes) {
   screen.appendChild(statusBar());
 
   const meta = el("div", { className: "prose" });
-  meta.appendChild(el("p", {}, `Realm: ${data.realm}`));
+  const scoredCount = getScoredRounds(data).length;
+  if (!GameState.directPractice) meta.appendChild(el("p", {}, `Realm: ${data.realm}`));
+
+  if (GameState.directPractice) {
+    meta.appendChild(el("p", {}, GameState.simpleEnglish ? data.desc : `Learning focus: ${data.desc}`));
+    meta.appendChild(el("p", {}, instructionText(
+      `This level contains ${scoredCount} scored exercises. Narrative choice moments are omitted in Direct Practice and never affect mastery.`,
+      `This level has ${scoredCount} scored exercises. Direct Practice skips story choices. Story choices never change your score.`
+    )));
+    screen.appendChild(meta);
+    root.appendChild(screen);
+    announce(instructionText(
+      `Level ${lv}: ${data.name}. ${scoredCount} scored exercises.`,
+      `Level ${lv}: ${data.name}. There are ${scoredCount} exercises for your score.`
+    ));
+    return waitPrompt();
+  }
 
   // Varied intro
   const realmStartLevels = {};
@@ -1036,7 +1192,7 @@ function screenLevelIntro(lv, data, scenes) {
 
   meta.innerHTML += `<p>This level is a journey through scenes and encounters.<br>
     Clear each scene to push deeper into the realm.</p>
-    <p>Encounters: ${data.rounds.length}<br>Scenes: ${scenes.length}</p>`;
+    <p>Scored exercises: ${scoredCount}<br>Scenes: ${scenes.length}</p>`;
   screen.appendChild(meta);
   root.appendChild(screen);
   announce(`Level ${lv}: ${data.name}. Realm: ${data.realm}.`);
@@ -1748,7 +1904,7 @@ function screenLevelComplete(lv, data, scenes) {
   const screen = el("div", { className: "screen" });
 
   const s = GameState.session;
-  const totalRounds = data.rounds.length;
+  const totalRounds = getScoredRounds(data).length;
   const pct = Math.round(100 * s.levelCorrect / totalRounds);
   const mastery = getLevelMasteryResult(lv, data);
 
@@ -2404,7 +2560,10 @@ function exposeTestHooks() {
     getTrialWordPool,
     getTrialReward,
     getMasteryRequirement,
+    getScoredRounds,
     getLevelMasteryResult,
+    screenPreferenceSetup,
+    screenPreferences,
     hasStudiedWord,
     screenWordStudy,
     announce,
@@ -2422,6 +2581,10 @@ function exposeTestHooks() {
 
 async function main() {
   GameState.init();
+
+  if (!GameState.progress.setup_complete) {
+    await screenPreferenceSetup();
+  }
 
   // Show intro if it's a fresh save
   if (GameState.completed.length === 0 && GameState.progress.total_correct === 0) {

@@ -197,6 +197,30 @@ body {
   color: var(--gold-bright);
 }
 
+.status-bar .mode-badge {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  color: var(--blue-bright);
+  white-space: nowrap;
+}
+
+body[data-presentation="direct"] .game-heading {
+  text-align: left;
+  border-bottom-color: var(--blue);
+}
+
+body[data-presentation="direct"] .game-heading h1 {
+  color: var(--blue-bright);
+  font-family: var(--font-body);
+  letter-spacing: normal;
+}
+
+body[data-instructions="simple"] .prose {
+  line-height: 1.85;
+  max-width: 48rem;
+}
+
 /* --- Narrative / prose -------------------------------------------------- */
 .prose {
   margin: var(--spacing-lg) 0;

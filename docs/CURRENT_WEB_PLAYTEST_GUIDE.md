@@ -5,9 +5,10 @@ This guide describes the current web version of SpellQuest. The older Python and
 ## Starting the game
 
 1. Open the public SpellQuest link in a modern browser.
-2. On a new save, read the introduction.
-3. Activate **Begin Your Quest**.
-4. Progress is saved automatically in that browser.
+2. Choose **Simple English** or **Standard English**. This changes instruction wording, not spelling difficulty.
+3. Choose **Story Adventure** or **Direct Practice**. Both use the same lessons, mastery, rewards, and save progress.
+4. Read the introduction and activate **Begin Your Quest**.
+5. Progress and preferences are saved automatically in that browser.
 
 Supported browsers include current versions of Chrome, Edge, Firefox, and Safari. The game is designed for keyboard-only play and screen readers including NVDA, JAWS, Narrator, VoiceOver, and TalkBack.
 
@@ -33,6 +34,7 @@ Screen-reader users should follow the announced control and its accessible name.
 - **The Adventurer's Rest** contains the three bonus trials.
 - **Review Your Mistakes** lists saved mistakes and correct answers.
 - **View Your Stats** shows levels, gems, streaks, rank, and achievements.
+- **Learning & Presentation Settings** changes instruction language or presentation without resetting progress.
 - **Save and Load** exports, imports, or resets progress.
 - **About SpellQuest** explains the game and its current features.
 
@@ -146,14 +148,17 @@ Please pay particular attention to:
 - Whether Typing Bomb's separate instructions and Start screen make the timer fair with a screen reader.
 - Whether the fantasy tone feels welcoming or too child-oriented for your preferred way of learning.
 
-## Current audience question
+## Instruction language and presentation
 
-The current playtest still uses a fantasy-adventure presentation. Recent changes improve progression, teaching, accessibility, and reward clarity, but they do not yet provide separate child and adult writing styles.
+The current playtest no longer asks players to identify themselves as children or adults. It separates two preferences:
 
-The longer-term design question is now more precise than child versus adult. Future work should distinguish English comprehension, spelling/writing skill, and presentation preference. See [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md).
+- **Simple English** uses shorter instructions and common words.
+- **Standard English** uses normal explanations and richer vocabulary.
+- **Story Adventure** includes realms, characters, scene transitions, and narrative choices.
+- **Direct Practice** reduces story transitions and goes to scored exercises faster.
 
-Testers are invited to say whether they would prefer:
+Narrative choices never affect scores, streaks, gems, or mastery. Direct Practice omits them.
 
-- the current story-rich presentation;
-- a more direct and age-neutral exercise presentation; or
-- a choice between those presentation styles while keeping the same lessons and progress.
+The longer-term design still needs a placement check and Simple English variants for more level-specific hints and explanations. See [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md).
+
+Testers are invited to compare the available settings and report where Simple English remains too difficult or Direct Practice still contains unnecessary story text.
