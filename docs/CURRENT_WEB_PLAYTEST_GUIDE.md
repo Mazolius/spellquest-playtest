@@ -7,8 +7,10 @@ This guide describes the current web version of SpellQuest. The older Python and
 1. Open the public SpellQuest link in a modern browser.
 2. Choose **Simple English** or **Standard English**. This changes instruction wording, not spelling difficulty.
 3. Choose **Story Adventure** or **Direct Practice**. Both use the same lessons, mastery, rewards, and save progress.
-4. Read the introduction and activate **Begin Your Quest**.
-5. Progress and preferences are saved automatically in that browser.
+4. Start at Level 1 or take the optional five-question placement check.
+5. The placement check may recommend Level 1, 4, 7, 10, or 13. It gives no gems, achievements, completed levels, or statistics.
+6. Read the introduction and activate **Begin Your Quest**.
+7. Progress and preferences are saved automatically in that browser.
 
 Supported browsers include current versions of Chrome, Edge, Firefox, and Safari. The game is designed for keyboard-only play and screen readers including NVDA, JAWS, Narrator, VoiceOver, and TalkBack.
 
@@ -159,6 +161,8 @@ The current playtest no longer asks players to identify themselves as children o
 
 Narrative choices never affect scores, streaks, gems, or mastery. Direct Practice omits them.
 
-The longer-term design still needs a placement check and Simple English variants for more level-specific hints and explanations. See [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md).
+Simple English changes instructions, hints, and feedback templates but never changes the expected answer or mastery requirement. Spelling feedback uses letters directly; grammar and sentence-order feedback shows the correct full sentence in concise wording.
 
-Testers are invited to compare the available settings and report where Simple English remains too difficult or Direct Practice still contains unnecessary story text.
+The optional placement check tests typed production rather than only word recognition. Its recommendation opens a starting point without pretending that earlier levels were completed. See [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md).
+
+Testers are invited to compare the available settings, judge the placement recommendation, and report where Simple English remains unclear or Direct Practice still contains unnecessary story text.

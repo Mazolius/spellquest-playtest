@@ -23,6 +23,8 @@ Kurt's feedback concerned the August 2026 web playtest. The legacy Python and Wi
 - Preferences are saved and can be changed later without resetting progress.
 - Direct Practice reduces realm and scene transitions and omits narrative choices while preserving lessons and rewards.
 - Narrative choices no longer count as correct answers and cannot inflate mastery, accuracy, streaks, or gems.
+- An optional five-question typed placement check recommends Level 1, 4, 7, 10, or 13 without completing levels or granting rewards.
+- Simple English now supplies shorter task instructions and direct feedback templates across spelling, choice, grammar, sentence-order, and writing challenges while preserving identical answers.
 
 ## What has not changed yet
 
@@ -34,8 +36,7 @@ Therefore the honest current position is:
 
 - The learning design is more age-flexible.
 - A direct, more age-neutral presentation is available.
-- Simple English coverage is not yet complete for every level-specific hint and explanation.
-- A placement check that separates comprehension from writing skill remains future work.
+- Placement quality and remaining difficult vocabulary in level-specific content require public testing.
 
 A future design could separate language level from presentation style. The same lessons and save progress could support a **Story Adventure** presentation and a **Direct Practice** presentation without labeling either mode as being exclusively for children or adults.
 

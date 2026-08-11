@@ -26,6 +26,7 @@ const Storage = {
       setup_complete: false,
       instruction_language: "standard",
       presentation_style: "story",
+      recommended_start_level: 1,
     };
   },
 
@@ -74,6 +75,9 @@ const Storage = {
       setup_complete: data.setup_complete === true,
       instruction_language: data.instruction_language === "simple" ? "simple" : "standard",
       presentation_style: data.presentation_style === "direct" ? "direct" : "story",
+      recommended_start_level: [1, 4, 7, 10, 13].includes(normalizeInt(data.recommended_start_level, 1))
+        ? normalizeInt(data.recommended_start_level, 1)
+        : 1,
     };
   },
 
@@ -116,6 +120,7 @@ const GameState = {
   get mistakes()      { return this.progress.mistakes; },
   get simpleEnglish() { return this.progress.instruction_language === "simple"; },
   get directPractice(){ return this.progress.presentation_style === "direct"; },
+  get startLevel()    { return this.progress.recommended_start_level || 1; },
 
   rank() {
     let name = RANKS[0][1];
@@ -342,10 +347,104 @@ function instructionText(standard, simple) {
   return GameState.simpleEnglish ? simple : standard;
 }
 
+function roundHint(round) {
+  if (!GameState.simpleEnglish) return round.hint || "";
+  if (round.simple_hint) return round.simple_hint;
+  if (round.type === "fix") return "Find the grammar mistake. Write the full correct sentence.";
+  if (round.type === "order") return "Use every word once. Write one complete sentence.";
+  return round.hint || "Read the task carefully.";
+}
+
+function roundExplanation(round) {
+  if (!GameState.simpleEnglish) return round.explain || "";
+  if (round.simple_explain) return round.simple_explain;
+  if (round.type === "spell") {
+    const word = String(round.answer || "");
+    return `${Array.from(word.toUpperCase()).join(" – ")}. This word has ${Array.from(word).length} letters.`;
+  }
+  if (round.type === "choose") return `The correct answer is ${round.answer}. Read the full sentence with this word.`;
+  if (round.type === "fix" || round.type === "order") return `The correct sentence is: ${round.right}`;
+  if (round.type === "write") return "Write complete sentences about the topic. Check spelling before you submit.";
+  if (round.type === "story") return `Continue the story with at least ${round.min_sentences} complete sentences.`;
+  if (round.type === "essay") return "Write complete sentences about what you learned. Check spelling before you submit.";
+  return round.explain || "Read the result and try again if needed.";
+}
+
 function applyPreferencesToDocument() {
   if (!GameState.progress || typeof document === "undefined") return;
   document.body.dataset.instructions = GameState.simpleEnglish ? "simple" : "standard";
   document.body.dataset.presentation = GameState.directPractice ? "direct" : "story";
+}
+
+function normalizePlacementAnswer(value) {
+  return String(value || "").trim().toLowerCase().replace(/[.!?]+$/, "").replace(/\s+/g, " ");
+}
+
+function askPlacementQuestion(number, prompt, placeholder = "Type your answer") {
+  return new Promise((resolve) => {
+    const root = clearRoot();
+    const screen = el("div", { className: "screen" });
+    screen.appendChild(el("div", { className: "game-heading" }, el("h1", {}, `Placement Check: ${number} of 5`)));
+    screen.appendChild(el("div", { className: "prose" },
+      el("p", {}, prompt),
+      el("p", {}, instructionText(
+        "This check recommends a starting point. It does not affect gems, achievements, or statistics.",
+        "This check helps choose a start level. It does not change your gems, rewards, or scores."
+      ))));
+    const input = el("input", { className: "challenge-input", type: "text", autocomplete: "off", placeholder, "aria-label": prompt });
+    const button = el("button", { className: "btn btn-primary" }, "Submit Answer");
+    screen.appendChild(input);
+    screen.appendChild(button);
+    root.appendChild(screen);
+    input.focus();
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      resolve(input.value);
+    };
+    button.addEventListener("click", finish);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        finish();
+      }
+    });
+    announce(`Placement question ${number} of 5. ${prompt}`);
+  });
+}
+
+async function screenPlacementCheck() {
+  const questions = [
+    [instructionText("Spell the word for a small pet that says meow.", "Write the word for a small pet that says meow."), "cat"],
+    [instructionText("Spell the word meaning 'for the reason that'.", "Write the word that gives a reason. Example: I stayed home ___ it rained."), "because"],
+    [instructionText("Correct this sentence: He go to school yesterday.", "Fix this sentence: He go to school yesterday."), "he went to school yesterday"],
+    [instructionText("Put these words in order: yesterday / to / went / I / the / park", "Make a sentence: yesterday / to / went / I / the / park"), "i went to the park yesterday"],
+    [instructionText("Spell the word for a written set of questions used to collect information.", "Write the word for a form with many questions."), "questionnaire"],
+  ];
+  let score = 0;
+  for (let index = 0; index < questions.length; index++) {
+    const [prompt, expected] = questions[index];
+    const answer = await askPlacementQuestion(index + 1, prompt);
+    if (normalizePlacementAnswer(answer) === expected) score++;
+  }
+
+  const recommended = score <= 1 ? 1 : score === 2 ? 4 : score === 3 ? 7 : score === 4 ? 10 : 13;
+  const choice = await buildMenu(
+    instructionText("Placement Recommendation", "Suggested Start Level"),
+    [
+      [`Use recommended Level ${recommended}`, recommended],
+      ["Start at Level 1", 1],
+    ],
+    null,
+    instructionText(
+      `You answered ${score} of 5 correctly. Level ${recommended} is a suggested starting point, not a permanent restriction. Earlier levels remain available from the Traveler's Map.`,
+      `You got ${score} of 5 correct. We suggest Level ${recommended}. You can still play earlier levels from the map.`
+    )
+  );
+  GameState.progress.recommended_start_level = choice || 1;
+  GameState.save();
+  return GameState.progress.recommended_start_level;
 }
 
 async function screenPreferenceSetup({ allowCancel = false } = {}) {
@@ -376,9 +475,24 @@ async function screenPreferenceSetup({ allowCancel = false } = {}) {
   if (!presentation) return false;
 
   GameState.progress.presentation_style = presentation;
+  const startingChoice = await buildMenu(
+    instructionText("Choose a Starting Point", "Choose Where to Start"),
+    [
+      [instructionText("Take a short five-question placement check", "Take a short test with five questions"), "placement"],
+      ["Start at Level 1", "level1"],
+    ],
+    allowCancel ? "presentation" : null,
+    instructionText(
+      "The placement check recommends a level without completing earlier levels or awarding rewards.",
+      "The short test suggests a level. It does not finish levels or give rewards."
+    )
+  );
+  if (!startingChoice) return false;
+  GameState.progress.recommended_start_level = 1;
   GameState.progress.setup_complete = true;
   applyPreferencesToDocument();
   GameState.save();
+  if (startingChoice === "placement") await screenPlacementCheck();
   announce(instructionText(
     `Preferences saved. ${language === "simple" ? "Simple" : "Standard"} English with ${presentation === "story" ? "Story Adventure" : "Direct Practice"}.`,
     "Your choices are saved. You can change them later from the main menu."
@@ -566,9 +680,13 @@ async function screenMainMenu() {
 }
 
 /* ---------- Screen: Continue (find next uncompleted) ------------------- */
+function isLevelAvailable(lv) {
+  return lv === 1 || lv <= GameState.startLevel || GameState.completed.includes(lv - 1);
+}
+
 async function screenContinue() {
-  for (let lv = 1; lv <= 15; lv++) {
-    if (!GameState.completed.includes(lv)) {
+  for (let lv = GameState.startLevel; lv <= 15; lv++) {
+    if (!GameState.completed.includes(lv) && isLevelAvailable(lv)) {
       await playLevel(lv);
       return;
     }
@@ -597,7 +715,7 @@ async function screenLevelSelect() {
       else if (GameState.progress.visited_realms.includes(realm)) tag = "[ACTIVE]";
       else {
         const firstIncomplete = realmLevels.find(l => !GameState.completed.includes(l));
-        if (firstIncomplete && (firstIncomplete === 1 || GameState.completed.includes(firstIncomplete - 1)))
+        if (firstIncomplete && isLevelAvailable(firstIncomplete))
           tag = "[OPEN]";
         else tag = "[LOCKED]";
       }
@@ -615,7 +733,7 @@ async function screenLevelSelect() {
       const ld = LEVEL_DATA[lv];
       let tag;
       if (GameState.completed.includes(lv)) tag = "[DONE]";
-      else if (lv > 1 && !GameState.completed.includes(lv - 1)) tag = "[LOCKED]";
+      else if (!isLevelAvailable(lv)) tag = "[LOCKED]";
       else tag = "[READY]";
       return [`${tag}  Level ${lv}: ${ld.name}`, lv];
     });
@@ -623,11 +741,11 @@ async function screenLevelSelect() {
     const lv = await buildMenu(`${realm} — select a level`, levelItems, "realms");
     if (!lv) continue;
 
-    if (lv > 1 && !GameState.completed.includes(lv - 1)) {
+    if (!isLevelAvailable(lv)) {
       const root = clearRoot();
       root.appendChild(el("div", { className: "game-heading" }, el("h1", {}, "Level Locked!")));
       root.appendChild(el("div", { className: "prose" },
-        el("p", {}, `You must complete Level ${lv - 1} before you can play Level ${lv}.`),
+        el("p", {}, `Complete Level ${lv - 1} before playing Level ${lv}, or change your recommended start through the placement check.`),
         el("p", {}, "Keep going — you can do it!")));
       await waitPrompt();
     } else {
@@ -1005,8 +1123,8 @@ function screenWordStudy(round) {
     )),
     el("div", { className: "game-message msg-info" }, el("strong", {}, word)),
     el("p", {}, `Letters: ${letters}`),
-    el("p", {}, `Meaning: ${round.hint}`),
-    el("p", {}, `${instructionText("Pattern tip", "Spelling help")}: ${round.explain}`)));
+    el("p", {}, `Meaning: ${roundHint(round)}`),
+    el("p", {}, `${instructionText("Pattern tip", "Spelling help")}: ${roundExplanation(round)}`)));
   root.appendChild(screen);
   if (!GameState.progress.studied_words.includes(word.toLowerCase())) {
     GameState.progress.studied_words.push(word.toLowerCase());
@@ -1346,14 +1464,14 @@ function challengeSpell(r) {
     const root = getChallengeMount();
     const area = el("div", { className: "challenge-area" });
     area.innerHTML = `<span class="challenge-label">Challenge: SPELL THE WORD FROM MEMORY</span>
-      <p class="challenge-prompt">Meaning and hint: ${r.hint}</p>
+      <p class="challenge-prompt">Meaning and hint: ${roundHint(r)}</p>
       <p class="challenge-prompt">The written answer is now hidden. Type the word you studied.</p>`;
 
     const input = el("input", {
       className: "challenge-input",
       type: "text",
       placeholder: "Type the word and press ENTER...",
-      "aria-label": `Type the word you studied. Meaning and hint: ${r.hint}`,
+      "aria-label": `Type the word you studied. Meaning and hint: ${roundHint(r)}`,
     });
     area.appendChild(input);
     root.appendChild(area);
@@ -1361,7 +1479,7 @@ function challengeSpell(r) {
 
     const resultEl = el("div");
     root.appendChild(resultEl);
-    announce(`Spell the word from memory. Meaning and hint: ${r.hint}`);
+    announce(`Spell the word from memory. Meaning and hint: ${roundHint(r)}`);
 
     input.addEventListener("keydown", function handler(e) {
       if (e.key !== "Enter") return;
@@ -1378,7 +1496,7 @@ function challengeSpell(r) {
         resultEl.innerHTML = `
           <div class="game-message msg-error">NOT QUITE. The correct spelling is: <strong>${r.answer}</strong></div>
           <div class="game-message msg-neutral">You typed: ${ans}</div>
-          <div class="game-message msg-tip">TIP: ${r.explain}</div>`;
+          <div class="game-message msg-tip">TIP: ${roundExplanation(r)}</div>`;
         announce(`Not quite. The correct spelling is ${r.answer}.`);
         AudioFX.play("wrong");
 
@@ -1458,7 +1576,7 @@ function challengeChoose(r) {
         e.preventDefault();
         cleanup();
         resultEl.innerHTML = `<div class="game-message msg-error">You didn't pick an answer.</div>
-          <div class="game-message msg-tip">TIP: ${r.explain}</div>`;
+          <div class="game-message msg-tip">TIP: ${roundExplanation(r)}</div>`;
         announce("No answer selected.");
         resolve(false);
       }
@@ -1475,7 +1593,7 @@ function challengeChoose(r) {
       } else {
         resultEl.innerHTML = `
           <div class="game-message msg-error">NOT QUITE. The right answer was: <strong>${r.answer}</strong></div>
-          <div class="game-message msg-tip">TIP: ${r.explain}</div>`;
+          <div class="game-message msg-tip">TIP: ${roundExplanation(r)}</div>`;
         announce(`Not quite. The right answer was ${r.answer}.`);
         AudioFX.play("wrong");
         cleanup(); // remove old keydown listener
@@ -1508,12 +1626,12 @@ function challengeFix(r) {
     const area = el("div", { className: "challenge-area" });
     area.innerHTML = `<span class="challenge-label">Challenge: FIX THIS SENTENCE</span>
       <p class="challenge-prompt">Wrong sentence: <em style="color:var(--red);">${r.wrong}</em></p>
-      <p class="challenge-prompt">Hint: ${r.hint}</p>`;
+      <p class="challenge-prompt">Hint: ${roundHint(r)}</p>`;
 
     const input = el("input", {
       className: "challenge-input", type: "text",
       placeholder: "Type the correct sentence and press ENTER...",
-      "aria-label": `Fix the sentence. Wrong: ${r.wrong}. Hint: ${r.hint}`,
+      "aria-label": `Fix the sentence. Wrong: ${r.wrong}. Hint: ${roundHint(r)}`,
     });
     area.appendChild(input);
     root.appendChild(area);
@@ -1521,7 +1639,7 @@ function challengeFix(r) {
 
     const resultEl = el("div");
     root.appendChild(resultEl);
-    announce(`Fix this sentence: ${r.wrong}. Hint: ${r.hint}`);
+    announce(`Fix this sentence: ${r.wrong}. Hint: ${roundHint(r)}`);
 
     input.addEventListener("keydown", function handler(e) {
       if (e.key !== "Enter") return;
@@ -1538,7 +1656,7 @@ function challengeFix(r) {
         resultEl.innerHTML = `
           <div class="game-message msg-error">NOT QUITE. The correct sentence is: <strong>${r.right}</strong></div>
           <div class="game-message msg-neutral">You typed: ${ans}</div>
-          <div class="game-message msg-tip">TIP: ${r.explain}</div>`;
+          <div class="game-message msg-tip">TIP: ${roundExplanation(r)}</div>`;
         announce(`Not quite. The correct sentence is ${r.right}.`);
         AudioFX.play("wrong");
 
@@ -1565,12 +1683,12 @@ function challengeOrder(r) {
     const area = el("div", { className: "challenge-area" });
     area.innerHTML = `<span class="challenge-label">Challenge: PUT THE WORDS IN ORDER</span>
       <p class="challenge-prompt">Words to arrange: <strong>${r.words}</strong></p>
-      <p class="challenge-prompt">Hint: ${r.hint}</p>`;
+      <p class="challenge-prompt">Hint: ${roundHint(r)}</p>`;
 
     const input = el("input", {
       className: "challenge-input", type: "text",
       placeholder: "Type the complete sentence and press ENTER...",
-      "aria-label": `Put words in order: ${r.words}. Hint: ${r.hint}`,
+      "aria-label": `Put words in order: ${r.words}. Hint: ${roundHint(r)}`,
     });
     area.appendChild(input);
     root.appendChild(area);
@@ -1578,7 +1696,7 @@ function challengeOrder(r) {
 
     const resultEl = el("div");
     root.appendChild(resultEl);
-    announce(`Put the words in order: ${r.words}. Hint: ${r.hint}`);
+    announce(`Put the words in order: ${r.words}. Hint: ${roundHint(r)}`);
 
     input.addEventListener("keydown", function handler(e) {
       if (e.key !== "Enter") return;
@@ -1595,7 +1713,7 @@ function challengeOrder(r) {
         resultEl.innerHTML = `
           <div class="game-message msg-error">NOT QUITE. The correct sentence is: <strong>${r.right}</strong></div>
           <div class="game-message msg-neutral">You typed: ${ans}</div>
-          <div class="game-message msg-tip">TIP: ${r.explain}</div>`;
+          <div class="game-message msg-tip">TIP: ${roundExplanation(r)}</div>`;
         announce(`Not quite. Correct: ${r.right}.`);
         AudioFX.play("wrong");
 
@@ -1623,7 +1741,7 @@ function challengeWrite(r) {
     area.innerHTML = `<span class="challenge-label">Challenge: WRITING PRACTICE</span>
       <p class="challenge-prompt">Topic: ${r.prompt}</p>
       <p class="challenge-prompt">Try to use these words: ${r.keywords.join(", ")}</p>
-      <div class="game-message msg-tip">${r.explain}</div>`;
+      <div class="game-message msg-tip">${roundExplanation(r)}</div>`;
 
     const textarea = el("textarea", {
       className: "challenge-input",
@@ -1697,7 +1815,7 @@ function challengeStory(r) {
     area.innerHTML = `<span class="challenge-label">Challenge: CONTINUE THE STORY</span>
       <p class="challenge-prompt">Start here: <em>${r.prompt}</em></p>
       <p class="challenge-prompt">Write at least ${r.min_sentences} sentences to continue.</p>
-      <div class="game-message msg-tip">${r.explain}</div>`;
+      <div class="game-message msg-tip">${roundExplanation(r)}</div>`;
 
     const textarea = el("textarea", {
       className: "challenge-input", rows: 5,
@@ -1755,7 +1873,7 @@ function challengeEssay(r) {
     const area = el("div", { className: "challenge-area" });
     area.innerHTML = `<span class="challenge-label">Challenge: FINAL ESSAY</span>
       <p class="challenge-prompt">Topic: ${r.prompt}</p>
-      <div class="game-message msg-tip">${r.explain}</div>`;
+      <div class="game-message msg-tip">${roundExplanation(r)}</div>`;
 
     const textarea = el("textarea", {
       className: "challenge-input", rows: 6,
@@ -2562,8 +2680,12 @@ function exposeTestHooks() {
     getMasteryRequirement,
     getScoredRounds,
     getLevelMasteryResult,
+    isLevelAvailable,
+    roundHint,
+    roundExplanation,
     screenPreferenceSetup,
     screenPreferences,
+    screenPlacementCheck,
     hasStudiedWord,
     screenWordStudy,
     announce,
